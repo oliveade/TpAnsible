@@ -1,0 +1,95 @@
+---
+- name: Installer et configurer l'infrastructure MEVN
+  hosts: app_servers
+  become: yes
+
+  tasks:
+    - name: Mettre à jour apt et les paquets
+      apt:
+        update_cache: yes
+        upgrade: dist
+
+    - name: Installer les dépendances pour Node.js
+      apt:
+        name: curl
+        state: present
+
+    - name: Ajouter le repo Node.js 18.x
+      apt_key:
+        url: https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+        state: present
+
+    - name: Ajouter le dépôt Nodesource
+      apt_repository:
+        repo: deb https://deb.nodesource.com/node_18.x {{ ansible_distribution_release }} main
+        state: present
+
+    - name: Installer Node.js
+      apt:
+        name: nodejs
+        state: present
+
+    - name: Ajouter la clé MongoDB
+      apt_key:
+        url: https://www.mongodb.org/static/pgp/server-6.0.asc
+        state: present
+
+    - name: Ajouter le repo MongoDB
+      apt_repository:
+        repo: deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu {{ ansible_distribution_release }}/mongodb-org/6.0 multiverse
+        state: present
+
+    - name: Installer MongoDB
+      apt:
+        name: mongodb-org
+        state: present
+
+    - name: Activer et démarrer MongoDB
+      systemd:
+        name: mongod
+        enabled: yes
+        state: started
+
+    - name: Installer Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Activer et démarrer Nginx
+      systemd:
+        name: nginx
+        enabled: yes
+        state: started
+
+    - name: Copier la config Nginx pour MEVN
+      copy:
+        dest: /etc/nginx/sites-available/mevn
+        content: |
+          server {
+              listen 80;
+
+              location / {
+                  proxy_pass http://localhost:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
+          }
+
+    - name: Activer le site Nginx
+      file:
+        src: /etc/nginx/sites-available/mevn
+        dest: /etc/nginx/sites-enabled/mevn
+        state: link
+
+    - name: Supprimer le site par défaut
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Recharger Nginx
+      service:
+        name: nginx
+        state: reloaded

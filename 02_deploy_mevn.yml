@@ -1,0 +1,46 @@
+---
+- name: Déployer l'application MEVN
+  hosts: app_servers
+  become: yes
+  vars:
+    app_dir: /var/www/mevn-app
+    repo_url: https://github.com/aturingmachine/mevn-stack.git
+    node_env: production
+
+  tasks:
+    - name: Installer git
+      apt:
+        name: git
+        state: present
+
+    - name: Cloner le dépôt ou mettre à jour
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: main
+        update: yes
+
+    - name: Installer les dépendances Node.js
+      npm:
+        path: "{{ app_dir }}"
+        production: yes
+
+    - name: Installer pm2 globalement
+      npm:
+        name: pm2
+        global: yes
+        state: present
+
+    - name: Démarrer l'application avec pm2
+      command: pm2 start server.js --name mevn-app
+      args:
+        chdir: "{{ app_dir }}"
+      register: pm2_start
+      failed_when: pm2_start.rc not in [0, 1]
+
+    - name: Sauvegarder la configuration pm2 pour démarrage au boot
+      command: pm2 startup systemd -u {{ ansible_user }} --hp /home/{{ ansible_user }}
+      register: pm2_startup
+
+    - name: Enregistrer la liste pm2
+      command: pm2 save
